@@ -1,0 +1,6 @@
+{
+    "python.pythonPath": "C:\\Users\\lukez\\AppData\\Local\\Programs\\Python\\Python38-32\\python.exe",
+    "python.linting.pylintArgs": [
+        "--unsafe-load-any-extension=y"
+    ]
+}
