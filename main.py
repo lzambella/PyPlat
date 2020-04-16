@@ -79,57 +79,10 @@ class Agent(threading.Thread):
         path_grid = numpy.zeros_like(move_grid)
         visited_grid = numpy.zeros_like(move_grid)
 
-        # Get all surrounding nodes
-        node_left = move_grid[cur_r][cur_c - 1] if (cur_c != 0) else -1
-        node_right = move_grid[cur_r][cur_c + 1] if (cur_c != len(move_grid[cur_r]) - 1) else -1    # index OOB error
-        node_up = move_grid[cur_r - 1][cur_c] if (cur_r != 0) else -1
-        node_down = move_grid[cur_r + 1][cur_c] if (cur_r != len(move_grid) - 1) else -1
-
-        
-        # Check if the surrounding nodes are valid spaces the agent can be in 
-        # If the node is a spike, then 'jump' over it and add the subsequent node to the stack
-        
-        # Left case, check if left node is empty space or ladder AND the space below it is a platform (or ladder)
-        # TODO: This block can be condensed into its own function
-        if (node_left in [1, 6]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
-            path_grid[cur_r][cur_c] = 1
-            search_stack.put((cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
-        # If its a spike, do this instead but check if there is ground two spaces left and one space down
-        elif (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c - 1] = 2
-            search_stack.put((cur_r, cur_c - 2, path_grid))
-        # Check if there is a gap to jump to
-        elif (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c - 1] = 2
-            search_stack.put((cur_r, cur_c - 2, path_grid))
-
-        # Right case
-        if (node_right in [1, 6]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
-            path_grid[cur_r][cur_c] = 1
-            search_stack.put( (cur_r, cur_c + 1, path_grid) )  
-        elif (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 6]):
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c + 1] = 2
-            search_stack.put((cur_r, cur_c + 2, path_grid))
-        # Check if there is a gap to jump to
-        elif (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c + 1] = 2
-            search_stack.put((cur_r, cur_c + 2, path_grid))
-
-        # Up case
-        # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
-        if (node_up in {1, 6}) and (move_grid[cur_r][cur_c] == 6):
-            path_grid[cur_r][cur_c] = 1
-            search_stack.put((cur_r - 1, cur_c, path_grid)) 
-
-        # Down case
-        # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
-        if (node_down in {6}) and (move_grid[cur_r][cur_c] in [1, 6]):
-            path_grid[cur_r][cur_c] = 1
-            search_stack.put((cur_r + 1, cur_c, path_grid)) 
+        # Get surrounding nodes
+        neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited_grid)
+        # Find valid nodes and add to the stack
+        self.__get_valid_moves(cur_r, cur_c, neighbor_nodes, move_grid, path_grid, search_stack, visited_grid)
 
         # Start the helper function after initialization given the stack has some nodes
         if (search_stack.empty()):
@@ -192,73 +145,119 @@ class Agent(threading.Thread):
             path[cur_r][cur_c] = 9
             return path
         else:
-            # Get all surrounding nodes, consider whether those surrounded nodes have already been visited
-            node_left = move_grid[cur_r][cur_c - 1] if (cur_c != 0) and (visited[cur_r][cur_c-1] != 1) else -1
-            node_right = move_grid[cur_r][cur_c + 1] if (cur_c != len(move_grid[cur_r]) - 1) and (visited[cur_r][cur_c + 1] != 1) else -1
-            node_up = move_grid[cur_r - 1][cur_c] if (cur_r != 0) and (visited[cur_r - 1][cur_c] != 1) else -1
-            node_down = move_grid[cur_r + 1][cur_c] if (cur_r != len(move_grid) - 1) and (visited[cur_r + 1][cur_c] != 1) else -1
+            # Get surrounding nodes
+            neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited)
+            # Find valid nodes and add to the stack
+            self.__get_valid_moves(cur_r, cur_c, neighbor_nodes, move_grid, path, stack, visited)
 
-            
-            # Check if the surrounding nodes are valid spaces the agent can be in 
-            # If the node is a spike, then 'jump' over it and add the subsequent node to the stack
-
-            # The path grid is copied to a new variable and pushed to the stack for each condition
-            # because this prevents the 'previous' iteration from being modified
-            # Without this, the final path may have forks in it
-
-            # Left case
-            if (node_left in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
-                path_grid = numpy.copy(path)
-                path_grid[cur_r][cur_c] = 1
-                stack.put((cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
-            if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 6]):
-                path_grid = numpy.copy(path)
-                visited[cur_r][cur_c - 1] = 1   # Set that spike as visited
-                path_grid[cur_r][cur_c] = 1
-                path_grid[cur_r][cur_c - 1] = 2
-                stack.put((cur_r, cur_c - 2, path_grid))
-            # Check if there is a gap to jump to
-            if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
-                path_grid = numpy.copy(path)
-                visited[cur_r][cur_c - 1] = 1
-                path_grid[cur_r][cur_c] = 1
-                path_grid[cur_r][cur_c - 1] = 2
-                stack.put((cur_r, cur_c - 2, path_grid))
-
-            # Right case
-            if (node_right in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
-                path_grid = numpy.copy(path)
-                path_grid[cur_r][cur_c] = 1
-                stack.put((cur_r, cur_c + 1, path_grid))  
-            if (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 6]):
-                path_grid = numpy.copy(path)
-                visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
-                path_grid[cur_r][cur_c] = 1
-                path_grid[cur_r][cur_c + 1] = 2
-                stack.put((cur_r, cur_c + 2, path_grid))
-            # Check if there is a gap to jump to
-            if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
-                path_grid = numpy.copy(path)
-                visited[cur_r][cur_c + 1] = 1
-                path_grid[cur_r][cur_c] = 1
-                path_grid[cur_r][cur_c + 1] = 2
-                stack.put((cur_r, cur_c + 2, path_grid))
-
-            # Up case
-            # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
-            if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
-                path_grid = numpy.copy(path)
-                path_grid[cur_r][cur_c] = 1
-                stack.put((cur_r - 1, cur_c, path_grid)) 
-
-            # Down case
-            # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
-            if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6]):
-                path_grid = numpy.copy(path)
-                path_grid[cur_r][cur_c] = 1
-                stack.put((cur_r + 1, cur_c, path_grid))
             #print(f"Nodes in stack: {stack.qsize()}")
             return self.dfs_search_helper(move_grid=move_grid, stack=stack, target=target, visited=visited)
+
+
+    def __get_surrounding_nodes(self, cur_r, cur_c, move_grid, visited):
+        '''
+        Gets all surrounding nodes in the environment
+        takes the agents current coordinates and the corresponding environment and any visited nodes as the input
+
+        outputs a tuple of (left, right, up, down) nodes
+        any visited spaces or out-of-boundries are always -1
+
+        returns a 4-tuple containing what thing is in the surrounding nodes
+        '''
+        node_left = move_grid[cur_r][cur_c - 1] if (cur_c != 0) and (visited[cur_r][cur_c-1] != 1) else -1
+        node_right = move_grid[cur_r][cur_c + 1] if (cur_c != len(move_grid[cur_r]) - 1) and (visited[cur_r][cur_c + 1] != 1) else -1
+        node_up = move_grid[cur_r - 1][cur_c] if (cur_r != 0) and (visited[cur_r - 1][cur_c] != 1) else -1
+        node_down = move_grid[cur_r + 1][cur_c] if (cur_r != len(move_grid) - 1) and (visited[cur_r + 1][cur_c] != 1) else -1  
+
+        return (node_left, node_right, node_up, node_down)
+
+
+    def __get_valid_moves(self, cur_r, cur_c, neighbor_nodes, move_grid, path, stack, visited):
+        '''
+        Takes the surrounding nodes of the current coordinates and determines wheteher they are valid nodes that the agent can travel to
+        When a node is valid, it copies the current path, sets the current coords of the agent on the copie path to visited and pushes the new coordinates and copied path to a global stack
+        If theres any jump at all, it sets the obsticals coordinates as visited on the visited grid.
+
+        cur_r, cur_c -> current row/column coordinates of the agent
+        neighbor_nodes -> 4-tuple given by __get_surrounding_nodes()
+        environment -> the environment grid the agent is in
+        path -> the current path for the agent
+        stack -> the global search stack for the algorithm
+        visited -> the global visited grid that tells the agent what nodes have been visited
+
+        this function does not return anything and only updates the search data-structure
+        '''
+
+        # Check if the surrounding nodes are valid spaces the agent can be in 
+        # If the node is a spike, then 'jump' over it and add the subsequent node to the stack
+
+        # The path grid is copied to a new variable and pushed to the stack for each condition
+        # because this prevents the 'previous' iteration from being modified
+        # Without this, the final path returned by the function may have forks in it
+
+        (node_left, node_right, node_up, node_down) = neighbor_nodes
+
+        # Left case
+        if (node_left in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
+            path_grid = numpy.copy(path)
+            path_grid[cur_r][cur_c] = 1
+            stack.put((cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
+
+        if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 6]):
+            path_grid = numpy.copy(path)
+            visited[cur_r][cur_c - 1] = 1   # Set that spike as visited
+
+            path_grid[cur_r][cur_c] = 1
+            path_grid[cur_r][cur_c - 1] = 2
+
+            stack.put((cur_r, cur_c - 2, path_grid))
+
+        # Check if there is a gap to jump to
+        if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
+            path_grid = numpy.copy(path)
+            visited[cur_r][cur_c - 1] = 1
+
+            # Set the current coordinates and the hazards coordinates as part of the path for that iteration
+            path_grid[cur_r][cur_c] = 1
+            path_grid[cur_r][cur_c - 1] = 2
+
+            stack.put((cur_r, cur_c - 2, path_grid))
+
+        # Right case
+        if (node_right in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
+            path_grid = numpy.copy(path)
+            path_grid[cur_r][cur_c] = 1
+            stack.put((cur_r, cur_c + 1, path_grid))  
+
+        if (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 6]):
+            path_grid = numpy.copy(path)
+            visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
+            path_grid[cur_r][cur_c] = 1
+            path_grid[cur_r][cur_c + 1] = 2
+            stack.put((cur_r, cur_c + 2, path_grid))
+
+        # Check if there is a gap to jump to
+        if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
+            path_grid = numpy.copy(path)
+            visited[cur_r][cur_c + 1] = 1
+            path_grid[cur_r][cur_c] = 1
+            path_grid[cur_r][cur_c + 1] = 2
+            stack.put((cur_r, cur_c + 2, path_grid))
+
+        # Up case
+        # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
+        if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
+            path_grid = numpy.copy(path)
+            path_grid[cur_r][cur_c] = 1
+            stack.put((cur_r - 1, cur_c, path_grid)) 
+
+        # Down case
+        # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
+        if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6]):
+            path_grid = numpy.copy(path)
+            path_grid[cur_r][cur_c] = 1
+            stack.put((cur_r + 1, cur_c, path_grid))
+
 
     def run(self):
         print("Starting " + self.name)
