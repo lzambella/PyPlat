@@ -1,4 +1,6 @@
 from queue import LifoQueue as Stack
+from queue import PriorityQueue
+from math import sqrt
 
 import arcade
 import game_core
@@ -41,13 +43,17 @@ class Agent(threading.Thread):
         cur_r = self.tanuki_r
         cur_c = self.tanuki_c
         target_list = []
+
         # Get a list of the coordinates of all the goals we want through a basic search
         for row in range(0, len(environment) - 1):
             for col in range(0, len(environment[0]) - 1):
                 if environment[row][col] == 8:
                     target_list.append((row, col))
         print(target_list)
+
         # Iterate through each targets location and find the path to it
+        # TODO: perhaps only get the first path and trace that one before going for another. Can select the closest one first via the get_distance function
+        # TODO: Also attempt to avoid enemies (just reacting by jumping over them is not enough because the agent can possibly jump onto a spike or off a ledge)
         for coord in target_list:
             try:
                 fruit_path = self.dfs_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=coord)
@@ -59,11 +65,10 @@ class Agent(threading.Thread):
                 print("Could not find path, recursion error")
         return
 
-
     def dfs_search_starter(self, move_grid, cur_r, cur_c, target):
         '''
         Starter function that prepares the recursive function.
-        Handles the very first iteration by loading the stack with the initial nodes agent can travel to.
+        Handles the very first iteration by loading the queue with the initial nodes agent can travel to.
 
         move_grid -> the move grid with only one of the targets
         cur_r, cur_c -> current Row/column coordinates
@@ -72,8 +77,8 @@ class Agent(threading.Thread):
 
         '''
 
-        # A search stack contains a 3-tuple in the form (column_coord, row_coord, current_path_grid)
-        search_stack = Stack(maxsize = 1000)
+        # Create the priority queue for the A* search
+        search_queue = PriorityQueue(maxsize=1000)
 
         # Initialize path grid
         path_grid = numpy.zeros_like(move_grid)
@@ -82,33 +87,31 @@ class Agent(threading.Thread):
         # Get surrounding nodes
         neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited_grid)
         # Find valid nodes and add to the stack
-        self.__get_valid_moves(cur_r, cur_c, neighbor_nodes, move_grid, path_grid, search_stack, visited_grid)
+        self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path_grid, search_queue, visited_grid, 0)
 
-        # Start the helper function after initialization given the stack has some nodes
-        if (search_stack.empty()):
+        # Start the helper function after initialization given the queue has some nodes
+        if (search_queue.empty()):
             return None
         else:
             # print(f"Nodes in stack: {search_stack.qsize()}")
-            return self.dfs_search_helper(move_grid=move_grid, stack=search_stack, target=target, visited=visited_grid)
+            return self.dfs_search_helper(move_grid=move_grid, queue=search_queue, target=target, visited=visited_grid)
 
 
-    def dfs_search_helper(self, move_grid, stack, target, visited):
+    def dfs_search_helper(self, move_grid, queue, target, visited):
         '''
-        Find the path to the specified goal via DFS (Later to be upgraded to A*)
+        Find the path to the specified goal via A* search
 
         Each tile on the playing grid is its own node with any valid moves being potential branches
-        Prioritize going as far deep as possible,
-        storing each node in a stack and when there are no more moves to be made,
-        pop the stack and take the next path that hasn't been visited.
+        Prioritize minimizing the cost
+        Use a priority queue that contains the value of the function f = total_cost_paid + distance_to_goal
+        everytime a node is expanded, calculate the cost for that node (IE expanding 3 nodes like it normally does does not increment the total cost by 3 but keeps and instance of the cost where each one is only incremented once)
+        The priority queue will automatically sort by the lowest cost and we expand those nodes until the goal is found.
 
         The algorithm takes the following directions in order: left, up, right, down
 
-        The visited grid is used so the agent doesnt try to push valid nodes to the stack if they had already been visited
+        The visited grid is used so the agent doesnt try to push valid nodes to the queue if they had already been visited
 
-        We pop a node from the stack at the beginning.
-        every possible 'next' node is stored before repeating the function
-
-        1. Pop the stack (if any) => gets current coordinates and the path so far
+        1. Pop the queue (if any) => gets current coordinates and the path so far
         2. Check if current node is target node
         3. get all the valid next nodes and add their coords to the stack.
         4. Add the action to the path grid for each valid node 
@@ -129,11 +132,11 @@ class Agent(threading.Thread):
         '''
 
         # First check if there are any items in the stack, if empty then the target was not found
-        if stack.empty():
+        if queue.empty():
             return None
         else:
-            # Pop the stack and get the current coordinate and path
-            (cur_r, cur_c, path) = stack.get()        
+            # Pop the queue and get the current coordinate and path
+            (cost, cur_r, cur_c, path) = queue.get()
             # Set the current node as visited
         
         visited[cur_r][cur_c] = 1
@@ -148,10 +151,10 @@ class Agent(threading.Thread):
             # Get surrounding nodes
             neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited)
             # Find valid nodes and add to the stack
-            self.__get_valid_moves(cur_r, cur_c, neighbor_nodes, move_grid, path, stack, visited)
+            self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, cost)
 
             #print(f"Nodes in stack: {stack.qsize()}")
-            return self.dfs_search_helper(move_grid=move_grid, stack=stack, target=target, visited=visited)
+            return self.dfs_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
 
 
     def __get_surrounding_nodes(self, cur_r, cur_c, move_grid, visited):
@@ -162,7 +165,7 @@ class Agent(threading.Thread):
         outputs a tuple of (left, right, up, down) nodes
         any visited spaces or out-of-boundries are always -1
 
-        returns a 4-tuple containing what thing is in the surrounding nodes
+        returns a 4-tuple containing what thing (integer) is in the surrounding nodes
         '''
         node_left = move_grid[cur_r][cur_c - 1] if (cur_c != 0) and (visited[cur_r][cur_c-1] != 1) else -1
         node_right = move_grid[cur_r][cur_c + 1] if (cur_c != len(move_grid[cur_r]) - 1) and (visited[cur_r][cur_c + 1] != 1) else -1
@@ -172,18 +175,20 @@ class Agent(threading.Thread):
         return (node_left, node_right, node_up, node_down)
 
 
-    def __get_valid_moves(self, cur_r, cur_c, neighbor_nodes, move_grid, path, stack, visited):
+    def __get_valid_moves(self, cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, total_cost):
         '''
         Takes the surrounding nodes of the current coordinates and determines wheteher they are valid nodes that the agent can travel to
         When a node is valid, it copies the current path, sets the current coords of the agent on the copie path to visited and pushes the new coordinates and copied path to a global stack
         If theres any jump at all, it sets the obsticals coordinates as visited on the visited grid.
 
-        cur_r, cur_c -> current row/column coordinates of the agent
+        cur_r, cur_c -> current row/column coordinates of the agent (TODO: Change to tuple?)
+        target -> Target coordinates in tuple form (row, column)
         neighbor_nodes -> 4-tuple given by __get_surrounding_nodes()
         environment -> the environment grid the agent is in
         path -> the current path for the agent
-        stack -> the global search stack for the algorithm
+        queue -> the global priority queue for the search. we want to append the total cost paid plus to the straight line heuristic to the goal for that node. in the form (cost, row, col, current_path)
         visited -> the global visited grid that tells the agent what nodes have been visited
+        total_cost -> The total cost the agent has paid so far in the current search, this is for the heuristic
 
         this function does not return anything and only updates the search data-structure
         '''
@@ -191,18 +196,20 @@ class Agent(threading.Thread):
         # Check if the surrounding nodes are valid spaces the agent can be in 
         # If the node is a spike, then 'jump' over it and add the subsequent node to the stack
 
-        # The path grid is copied to a new variable and pushed to the stack for each condition
+        # The path grid is copied to a new variable and pushed to the queue for each condition
         # because this prevents the 'previous' iteration from being modified
-        # Without this, the final path returned by the function may have forks in it
+        # Without this, the final path returned by the function may have unintended forks in it
 
         (node_left, node_right, node_up, node_down) = neighbor_nodes
+        # Get the target for calculating the distance
+        (target_row, target_col) = target
 
         # Left case
         if (node_left in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            stack.put((cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
-
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
+        # Check if there is a spike to the left
         if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             visited[cur_r][cur_c - 1] = 1   # Set that spike as visited
@@ -210,9 +217,9 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c - 1] = 2
 
-            stack.put((cur_r, cur_c - 2, path_grid))
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
 
-        # Check if there is a gap to jump to
+        # Check if there is a gap to jump over
         if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
             path_grid = numpy.copy(path)
             visited[cur_r][cur_c - 1] = 1
@@ -221,43 +228,52 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c - 1] = 2
 
-            stack.put((cur_r, cur_c - 2, path_grid))
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
 
         # Right case
         if (node_right in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            stack.put((cur_r, cur_c + 1, path_grid))  
-
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 1, path_grid))  
+        # Check for spike to the right
         if (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c + 1] = 2
-            stack.put((cur_r, cur_c + 2, path_grid))
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
 
-        # Check if there is a gap to jump to
+        # Check if there is a gap to the right to jump over
         if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
             path_grid = numpy.copy(path)
             visited[cur_r][cur_c + 1] = 1
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c + 1] = 2
-            stack.put((cur_r, cur_c + 2, path_grid))
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
 
         # Up case
         # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
         if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            stack.put((cur_r - 1, cur_c, path_grid)) 
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r - 1, cur_c, path_grid)) 
 
         # Down case
         # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
         if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            stack.put((cur_r + 1, cur_c, path_grid))
+            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r + 1, cur_c, path_grid))
 
+    def __get_distance(self, x, y, goalx, goaly):
+        """
+        Gets the immediate distance from a coordinate to some goal
+        returns a double of the distance
+        """
+        return int(sqrt(pow(goalx - x, 2) + pow(goaly - y, 2)))
+
+    ####################################################################
+    ####################################################################
 
     def run(self):
         print("Starting " + self.name)
