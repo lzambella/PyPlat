@@ -4,6 +4,7 @@ from math import sqrt
 
 import arcade
 import game_core
+import game_data
 import threading
 import time
 import os
@@ -61,9 +62,76 @@ class Agent(threading.Thread):
                     print("No goal found")
                 else:
                     print(fruit_path)
+                    self.move_agent(cur_r=cur_r, cur_c=cur_c, path_grid=fruit_path)
             except RecursionError:
                 print("Could not find path, recursion error")
         return
+
+
+    #lastMove: 0 left, 1 left jump, 2 right, 3 right jump, 4 up, 5 down
+    def move_agent(self, cur_r, cur_c, path_grid):
+        lastMove = 0
+
+        while path_grid[cur_r][cur_c] != 9:
+            if (cur_c != 0) and (path_grid[cur_r][cur_c-1] == 1 or path_grid[cur_r][cur_c-1] == 9): #left
+                if lastMove == 2 or lastMove == 3 or lastMove == 4 or lastMove == 5:
+                    self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+                
+                path_grid[cur_r][cur_c] = 0
+                cur_c = cur_c-1
+                lastMove = 0
+                print("left")
+            elif (cur_c != 0) and (path_grid[cur_r][cur_c - 1] == 2): #jump
+                if lastMove == 2 or lastMove == 3 or lastMove == 4 or lastMove == 5:
+                    self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
+                
+                path_grid[cur_r][cur_c] = 0
+                cur_c = cur_c-2
+                lastMove = 1
+                print("jump")
+            elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 1 or path_grid[cur_r][cur_c + 1] == 9): #right
+                if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
+                    self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+                
+                path_grid[cur_r][cur_c] = 0
+                cur_c = cur_c+1
+                lastMove = 2
+                print("right")
+            elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 2): #jump
+                if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
+                    self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
+                    
+                path_grid[cur_r][cur_c] = 0
+                cur_c = cur_c+2
+                lastMove = 3
+                print("jump")
+            elif (cur_r != 0) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #up
+                if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
+                    self.game.on_key_press(key = arcade.key.UP, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.UP, key_modifiers = False)
+                
+                path_grid[cur_r][cur_c] = 0
+                cur_r = cur_r-1
+                lastMove = 4
+                print("up")
+            elif (cur_r != cur_r != len(path_grid) - 1) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #down
+                if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
+                    self.game.on_key_press(key = arcade.key.DOWN, key_modifiers = False)
+                self.game.on_key_press(key = arcade.key.DOWN, key_modifiers = False)
+
+                path_grid[cur_r][cur_c] = 0
+                cur_r = cur_r+1
+                lastMove = 5
+                print("down")
+
+            time.sleep(0.50)
+         
+        return
+        
 
     def dfs_search_starter(self, move_grid, cur_r, cur_c, target):
         '''
@@ -313,6 +381,7 @@ class Agent(threading.Thread):
             self.ai_function()
 
             # Display grid information (can be turned off if performance issue exists)
+            
             if self.show_grid_info:
                 for row in range(12):
                     for col in range(20):
@@ -326,7 +395,7 @@ class Agent(threading.Thread):
 
                 pygame.transform.scale(backscreen, screen_size, screen)
                 pygame.display.flip()
-
+            
             # We must allow enough CPU time for the main game application
             # Polling interval can be reduced if you don't display the grid information
             time.sleep(0.05)
