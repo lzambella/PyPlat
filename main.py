@@ -41,17 +41,30 @@ class Agent(threading.Thread):
         # To send a key stroke to the game, use self.game.on_key_press() method
 
         # Get current state of goals
-        environment = self.move_grid
+        environment = numpy.copy(self.move_grid)
+        enemies = self.kill_grid
+        """
+        Project the enemy grid onto the environment, replacing any air spaces with an enemy identifier
+        Uses a spike to represent an enemy so additional code shouldn't be needed
+        The idea is that the agent will just jump over the 'spike'
+        If jumping over cant be done safely, the agent will follow a different path to the goal.
+        The problem that needs to be considered is if there isn't an alternative path to the goal, the path finding will fail and the agent might die
+        """
+        for row in range(0, len(environment) - 1):
+            for col in range(0, len(environment[0]) - 1):
+                if enemies[row][col] == True:
+                    environment[row][col] = 7
+
+        
         cur_r = self.tanuki_r
         cur_c = self.tanuki_c
         target_list = []
-
         # Get a list of the coordinates of all the goals we want through a basic search
         for row in range(0, len(environment) - 1):
             for col in range(0, len(environment[0]) - 1):
                 if environment[row][col] == 8:
                     target_list.append((row, col))
-        print(target_list)
+        # print(target_list)
         # Inefficient way of checking if our path to one fruit crossed another fruit
         # We remove it from the environment grid then
         for i in range (0, len(target_list) - 1):
@@ -64,7 +77,7 @@ class Agent(threading.Thread):
         dodge enemies whos state changes often by continuously finding the path to the goal
         """
         try:
-            fruit_path = self.dfs_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=target_list[0])
+            fruit_path = self.astar_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=target_list[0])
             if fruit_path is None:
                 print("No goal found")
             else:
@@ -148,12 +161,12 @@ class Agent(threading.Thread):
             lastMove = 5
             print("down")
 
-        time.sleep(0.05)
+        time.sleep(0.10)
          
         return lastMove
         
 
-    def dfs_search_starter(self, move_grid, cur_r, cur_c, target):
+    def astar_search_starter(self, move_grid, cur_r, cur_c, target):
         '''
         Starter function that prepares the recursive function.
         Handles the very first iteration by loading the queue with the initial nodes agent can travel to.
@@ -182,10 +195,10 @@ class Agent(threading.Thread):
             return None
         else:
             # print(f"Nodes in stack: {search_stack.qsize()}")
-            return self.dfs_search_helper(move_grid=move_grid, queue=search_queue, target=target, visited=visited_grid)
+            return self.astar_search_helper(move_grid=move_grid, queue=search_queue, target=target, visited=visited_grid)
 
 
-    def dfs_search_helper(self, move_grid, queue, target, visited):
+    def astar_search_helper(self, move_grid, queue, target, visited):
         '''
         Find the path to the specified goal via A* search
 
@@ -241,7 +254,7 @@ class Agent(threading.Thread):
                 self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, cost)
 
                 #print(f"Nodes in stack: {stack.qsize()}")
-                return self.dfs_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
+                return self.astar_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
 
 
     def __get_surrounding_nodes(self, cur_r, cur_c, move_grid, visited):
@@ -262,7 +275,7 @@ class Agent(threading.Thread):
         return (node_left, node_right, node_up, node_down)
 
 
-    def __get_valid_moves(self, cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, total_cost):
+    def __get_valid_moves(self, cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, total_cost, kill_grid=None):
         '''
         Takes the surrounding nodes of the current coordinates and determines wheteher they are valid nodes that the agent can travel to
         When a node is valid, it copies the current path, sets the current coords of the agent on the copie path to visited and pushes the new coordinates and copied path to a global stack
@@ -311,6 +324,7 @@ class Agent(threading.Thread):
 
             epsilon = random() * 0.001
             queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
+        # Check if there is an enemy to the left
 
         # Check if there is a gap to jump over
         if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
