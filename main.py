@@ -1,6 +1,7 @@
 from queue import LifoQueue as Stack
 from queue import PriorityQueue
 from math import sqrt
+from random import random
 
 import arcade
 import game_core
@@ -32,7 +33,7 @@ class Agent(threading.Thread):
         self.total_life = 0
         self.tanuki_r = 0
         self.tanuki_c = 0
-
+        self.last_move = 0; # Last move the agent did
     #############################################################
     #      YOUR SUPER COOL ARTIFICIAL INTELLIGENCE HERE!!!      #
     #############################################################
@@ -51,86 +52,105 @@ class Agent(threading.Thread):
                 if environment[row][col] == 8:
                     target_list.append((row, col))
         print(target_list)
+        # Inefficient way of checking if our path to one fruit crossed another fruit
+        # We remove it from the environment grid then
+        for i in range (0, len(target_list) - 1):
+            if (cur_r == target_list[i][0] and cur_c == target_list[i][1]):
+                self.move_grid[cur_r][cur_c] = 1
+        """
+        The idea for moving the agent is to find the path to the goal first, move the agent ONE square only and repeat
 
-        # Iterate through each targets location and find the path to it
-        # TODO: perhaps only get the first path and trace that one before going for another. Can select the closest one first via the get_distance function
-        # TODO: Also attempt to avoid enemies (just reacting by jumping over them is not enough because the agent can possibly jump onto a spike or off a ledge)
-        for coord in target_list:
-            try:
-                fruit_path = self.dfs_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=coord)
-                if fruit_path is None:
-                    print("No goal found")
+        Combining this with pathfinding for the enemies, the agent should be able to successfully 
+        dodge enemies whos state changes often by continuously finding the path to the goal
+        """
+        try:
+            fruit_path = self.dfs_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=target_list[0])
+            if fruit_path is None:
+                print("No goal found")
+            else:
+                print(fruit_path)
+                # Move the agent one square
+                # If we are already on the target square, remove it from the environment because this isnt done automatically when the fruit is collected
+                if (cur_r == target_list[0][0] and cur_c == target_list[0][1]):
+                    self.move_grid[cur_r][cur_c] = 1
                 else:
-                    print(fruit_path)
-                    self.move_agent(cur_r=cur_r, cur_c=cur_c, path_grid=fruit_path)
-            except RecursionError:
-                print("Could not find path, recursion error")
-        return
+                    self.last_move = self.move_agent(cur_r=cur_r, cur_c=cur_c, path_grid=fruit_path, last_move=self.last_move)
+        except RecursionError:
+            print("Could not find a path: Recursion error")
 
 
     #lastMove: 0 left, 1 left jump, 2 right, 3 right jump, 4 up, 5 down
-    def move_agent(self, cur_r, cur_c, path_grid):
-        lastMove = 0
-
-        while path_grid[cur_r][cur_c] != 9:
-            if (cur_c != 0) and (path_grid[cur_r][cur_c-1] == 1 or path_grid[cur_r][cur_c-1] == 9): #left
-                if lastMove == 2 or lastMove == 3 or lastMove == 4 or lastMove == 5:
-                    self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+    def move_agent(self, cur_r, cur_c, path_grid, last_move):
+        '''
+        Moves the agent one square, following the path given by path_grid
+        '''
+        lastMove = last_move
+        # Move left    
+        if (cur_c != 0) and (path_grid[cur_r][cur_c-1] == 1 or path_grid[cur_r][cur_c-1] == 9): #left
+            if lastMove == 2 or lastMove == 3 or lastMove == 4 or lastMove == 5:
                 self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
-                
-                path_grid[cur_r][cur_c] = 0
-                cur_c = cur_c-1
-                lastMove = 0
-                print("left")
-            elif (cur_c != 0) and (path_grid[cur_r][cur_c - 1] == 2): #jump
-                if lastMove == 2 or lastMove == 3 or lastMove == 4 or lastMove == 5:
-                    self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
-                self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
-                
-                path_grid[cur_r][cur_c] = 0
-                cur_c = cur_c-2
-                lastMove = 1
-                print("jump")
-            elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 1 or path_grid[cur_r][cur_c + 1] == 9): #right
-                if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
-                    self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+            
+            path_grid[cur_r][cur_c] = 0
+            cur_c = cur_c-1
+            lastMove = 0
+            print("left")
+        # Jump left
+        elif (cur_c != 0) and (path_grid[cur_r][cur_c - 1] == 2): #jump
+            print(f"Last Move: {lastMove}")
+            if lastMove in [1, 2, 3, 4, 5]:
+                print("Turn left")
+                self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
+            
+            path_grid[cur_r][cur_c] = 0
+            cur_c = cur_c-2
+            lastMove = 1
+            print("jump Left")
+        # Move right
+        elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 1 or path_grid[cur_r][cur_c + 1] == 9): #right
+            if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
                 self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+            
+            path_grid[cur_r][cur_c] = 0
+            cur_c = cur_c+1
+            lastMove = 2
+            print("right")
+        # Jump right
+        elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 2): #jump
+            if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
+                self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
                 
-                path_grid[cur_r][cur_c] = 0
-                cur_c = cur_c+1
-                lastMove = 2
-                print("right")
-            elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 2): #jump
-                if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
-                    self.game.on_key_press(key = arcade.key.RIGHT, key_modifiers = False)
-                self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
-                    
-                path_grid[cur_r][cur_c] = 0
-                cur_c = cur_c+2
-                lastMove = 3
-                print("jump")
-            elif (cur_r != 0) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #up
-                if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
-                    self.game.on_key_press(key = arcade.key.UP, key_modifiers = False)
+            path_grid[cur_r][cur_c] = 0
+            cur_c = cur_c+2
+            lastMove = 3
+            print("jump Right")
+        # Move up
+        elif (cur_r != 0) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #up
+            if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
                 self.game.on_key_press(key = arcade.key.UP, key_modifiers = False)
-                
-                path_grid[cur_r][cur_c] = 0
-                cur_r = cur_r-1
-                lastMove = 4
-                print("up")
-            elif (cur_r != cur_r != len(path_grid) - 1) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #down
-                if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
-                    self.game.on_key_press(key = arcade.key.DOWN, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.UP, key_modifiers = False)
+            
+            path_grid[cur_r][cur_c] = 0
+            cur_r = cur_r-1
+            lastMove = 4
+            print("up")
+        # Move down
+        elif (cur_r != len(path_grid) - 1) and (path_grid[cur_r + 1][cur_c] == 1 or path_grid[cur_r + 1][cur_c] == 9): #down
+            if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
                 self.game.on_key_press(key = arcade.key.DOWN, key_modifiers = False)
+            self.game.on_key_press(key = arcade.key.DOWN, key_modifiers = False)
 
-                path_grid[cur_r][cur_c] = 0
-                cur_r = cur_r+1
-                lastMove = 5
-                print("down")
+            path_grid[cur_r][cur_c] = 0
+            cur_r = cur_r+1
+            lastMove = 5
+            print("down")
 
-            time.sleep(0.50)
+        time.sleep(0.05)
          
-        return
+        return lastMove
         
 
     def dfs_search_starter(self, move_grid, cur_r, cur_c, target):
@@ -206,23 +226,22 @@ class Agent(threading.Thread):
             # Pop the queue and get the current coordinate and path
             (cost, cur_r, cur_c, path) = queue.get()
             # Set the current node as visited
-        
-        visited[cur_r][cur_c] = 1
-        (target_row, target_column) = target
-        #print(visited)
-        # Check if we are already on the target: return the path if so
-        if cur_r == target_row and cur_c == target_column:
-            print("TARGET REACHED!")
-            path[cur_r][cur_c] = 9
-            return path
-        else:
-            # Get surrounding nodes
-            neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited)
-            # Find valid nodes and add to the stack
-            self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, cost)
+            visited[cur_r][cur_c] = 1
+            (target_row, target_column) = target
+            #print(visited)
+            # Check if we are already on the target: return the path if so
+            if cur_r == target_row and cur_c == target_column:
+                print("TARGET REACHED!")
+                path[cur_r][cur_c] = 9
+                return path
+            else:
+                # Get surrounding nodes
+                neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited)
+                # Find valid nodes and add to the stack
+                self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, cost)
 
-            #print(f"Nodes in stack: {stack.qsize()}")
-            return self.dfs_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
+                #print(f"Nodes in stack: {stack.qsize()}")
+                return self.dfs_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
 
 
     def __get_surrounding_nodes(self, cur_r, cur_c, move_grid, visited):
@@ -268,6 +287,10 @@ class Agent(threading.Thread):
         # because this prevents the 'previous' iteration from being modified
         # Without this, the final path returned by the function may have unintended forks in it
 
+        # We add an small random value, epsilon, to the heuristic to greaty decrease the chance of two having the same exact cost
+        # This prevents an error with the priority queue module where when there is a tie for the cost, it will check the second type for priority
+        # It will end up checking the path grid array for priority and because they can't be compared directly, the program crashes
+        
         (node_left, node_right, node_up, node_down) = neighbor_nodes
         # Get the target for calculating the distance
         (target_row, target_col) = target
@@ -276,7 +299,8 @@ class Agent(threading.Thread):
         if (node_left in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 1, path_grid))  # Append 3-tuple of coordinates and the visited grid
+            epsilon = random() * 0.001
+            queue.put( (total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col) , cur_r, cur_c - 1, path_grid))  # Append 4-tuple of coordinates and the visited grid
         # Check if there is a spike to the left
         if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
@@ -285,7 +309,8 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c - 1] = 2
 
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
+            epsilon = random() * 0.001
+            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
 
         # Check if there is a gap to jump over
         if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
@@ -296,7 +321,8 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c - 1] = 2
 
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
+            epsilon = random() * 0.001
+            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
 
         # Right case
         if (node_right in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
@@ -309,7 +335,9 @@ class Agent(threading.Thread):
             visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c + 1] = 2
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
+
+            epsilon = random() * 0.001
+            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
 
         # Check if there is a gap to the right to jump over
         if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
@@ -317,28 +345,34 @@ class Agent(threading.Thread):
             visited[cur_r][cur_c + 1] = 1
             path_grid[cur_r][cur_c] = 1
             path_grid[cur_r][cur_c + 1] = 2
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
+
+            epsilon = random() * 0.001
+            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
 
         # Up case
         # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
         if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r - 1, cur_c, path_grid)) 
+
+            epsilon = random() * 0.001
+            queue.put( (total_cost + epsilon + self.__get_distance(cur_r - 1, cur_c, target_row, target_col), cur_r - 1, cur_c, path_grid) ) 
 
         # Down case
         # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
         if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
-            queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r + 1, cur_c, path_grid))
+
+            epsilon = random() * 0.001
+            queue.put( ( total_cost + epsilon + self.__get_distance(cur_r + 1, cur_c, target_row, target_col), cur_r + 1, cur_c, path_grid) )
 
     def __get_distance(self, x, y, goalx, goaly):
         """
         Gets the immediate distance from a coordinate to some goal
         returns a double of the distance
         """
-        return int(sqrt(pow(goalx - x, 2) + pow(goaly - y, 2)))
+        return sqrt(pow(goalx - x, 2) + pow(goaly - y, 2))
 
     ####################################################################
     ####################################################################
