@@ -40,7 +40,7 @@ class Agent(threading.Thread):
     def ai_function(self):
         # To send a key stroke to the game, use self.game.on_key_press() method
 
-        # Get current state of goals
+        # Get a copy of the current environment
         environment = numpy.copy(self.move_grid)
         enemies = self.kill_grid
         """
@@ -54,7 +54,6 @@ class Agent(threading.Thread):
             for col in range(0, len(environment[0]) - 1):
                 if enemies[row][col] == True:
                     environment[row][col] = 7
-
         
         cur_r = self.tanuki_r
         cur_c = self.tanuki_c
@@ -78,10 +77,8 @@ class Agent(threading.Thread):
         """
         try:
             fruit_path = self.astar_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=target_list[0])
-            if fruit_path is None:
-                print("No goal found")
-            else:
-                print(fruit_path)
+            if fruit_path is not None:
+                #print(fruit_path)
                 # Move the agent one square
                 # If we are already on the target square, remove it from the environment because this isnt done automatically when the fruit is collected
                 if (cur_r == target_list[0][0] and cur_c == target_list[0][1]):
@@ -90,6 +87,8 @@ class Agent(threading.Thread):
                     self.last_move = self.move_agent(cur_r=cur_r, cur_c=cur_c, path_grid=fruit_path, last_move=self.last_move)
         except RecursionError:
             print("Could not find a path: Recursion error")
+        except IndexError:
+            print("No targets! is an enemy over one?")
 
 
     #lastMove: 0 left, 1 left jump, 2 right, 3 right jump, 4 up, 5 down
@@ -161,8 +160,7 @@ class Agent(threading.Thread):
             lastMove = 5
             print("down")
 
-        time.sleep(0.10)
-         
+        time.sleep(0.01)
         return lastMove
         
 
@@ -244,7 +242,7 @@ class Agent(threading.Thread):
             #print(visited)
             # Check if we are already on the target: return the path if so
             if cur_r == target_row and cur_c == target_column:
-                print("TARGET REACHED!")
+                #print("TARGET REACHED!")
                 path[cur_r][cur_c] = 9
                 return path
             else:
@@ -307,65 +305,76 @@ class Agent(threading.Thread):
         (node_left, node_right, node_up, node_down) = neighbor_nodes
         # Get the target for calculating the distance
         (target_row, target_col) = target
+        # Block the jumping cases together
+        try:
+            # Check for spike to the right
+            if (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
+                if (move_grid[cur_r][cur_c + 2] not in [7]):
+                    path_grid = numpy.copy(path)
+                    visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
+                    path_grid[cur_r][cur_c] = 1
+                    path_grid[cur_r][cur_c + 1] = 2
 
+                    epsilon = random() * 0.001
+                    queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
+            # Check if there is a gap to the right to jump over to the right
+            if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
+                if (move_grid[cur_r][cur_c + 2] not in [7]):
+                    path_grid = numpy.copy(path)
+                    visited[cur_r][cur_c + 1] = 1
+                    path_grid[cur_r][cur_c] = 1
+                    path_grid[cur_r][cur_c + 1] = 2
+
+                    epsilon = random() * 0.001
+                    queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
+ 
+        except IndexError:
+            print("At map boudry to the right!")
+
+        try:
+            # Check if there is a spike to the left
+            if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
+                # Check if the space past the spike is not another spike
+                # Add it to the queue
+                if (move_grid[cur_r][cur_c-2] not in [7]):
+                    path_grid = numpy.copy(path)
+                    visited[cur_r][cur_c - 1] = 1   # Set that spike as visited
+
+                    path_grid[cur_r][cur_c] = 1
+                    path_grid[cur_r][cur_c - 1] = 2
+
+                    epsilon = random() * 0.001
+                    queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
+            # Check if there is a gap to jump over to the left
+            if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
+                if (move_grid[cur_r][cur_c - 2] not in [7]):
+                    path_grid = numpy.copy(path)
+                    visited[cur_r][cur_c - 1] = 1
+
+                    # Set the current coordinates and the hazards coordinates as part of the path for that iteration
+                    path_grid[cur_r][cur_c] = 1
+                    path_grid[cur_r][cur_c - 1] = 2
+
+                    epsilon = random() * 0.001
+                    queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
+
+        except IndexError:
+            print("At map boundry to the left!")
         # Left case
-        if (node_left in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
+        if (node_left in [1, 6, 8, 9, 10]) and (move_grid[cur_r + 1][cur_c - 1] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
             epsilon = random() * 0.001
             queue.put( (total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col) , cur_r, cur_c - 1, path_grid))  # Append 4-tuple of coordinates and the visited grid
-        # Check if there is a spike to the left
-        if (node_left == 7) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 6]):
-            path_grid = numpy.copy(path)
-            visited[cur_r][cur_c - 1] = 1   # Set that spike as visited
-
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c - 1] = 2
-
-            epsilon = random() * 0.001
-            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
-        # Check if there is an enemy to the left
-
-        # Check if there is a gap to jump over
-        if (node_left == 1 and move_grid[cur_r + 1][cur_c - 1] == 1) and (move_grid[cur_r + 1][cur_c - 2] in [2, 3, 4, 5, 6]):
-            path_grid = numpy.copy(path)
-            visited[cur_r][cur_c - 1] = 1
-
-            # Set the current coordinates and the hazards coordinates as part of the path for that iteration
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c - 1] = 2
-
-            epsilon = random() * 0.001
-            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c - 2, path_grid))
-
         # Right case
-        if (node_right in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
+        if (node_right in [1, 6, 8, 9, 10]) and (move_grid[cur_r + 1][cur_c + 1] in [2, 3, 4, 6]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
             queue.put((total_cost + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 1, path_grid))  
-        # Check for spike to the right
-        if (node_right == 7) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 6]):
-            path_grid = numpy.copy(path)
-            visited[cur_r][cur_c + 1] = 1       # Set the spike as visited
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c + 1] = 2
 
-            epsilon = random() * 0.001
-            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
-
-        # Check if there is a gap to the right to jump over
-        if (node_right == 1 and move_grid[cur_r + 1][cur_c + 1] == 1) and (move_grid[cur_r + 1][cur_c + 2] in [2, 3, 4, 5, 6]):
-            path_grid = numpy.copy(path)
-            visited[cur_r][cur_c + 1] = 1
-            path_grid[cur_r][cur_c] = 1
-            path_grid[cur_r][cur_c + 1] = 2
-
-            epsilon = random() * 0.001
-            queue.put((total_cost + epsilon + self.__get_distance(cur_r, cur_c - 1, target_row, target_col), cur_r, cur_c + 2, path_grid))
-
-        # Up case
+       # Up case
         # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
-        if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
+        if (node_up in [1, 6, 8, 9, 10]) and (move_grid[cur_r][cur_c] == 6):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
 
