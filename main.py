@@ -33,14 +33,30 @@ class Agent(threading.Thread):
         self.total_life = 0
         self.tanuki_r = 0
         self.tanuki_c = 0
-        self.last_move = 0 # Last move the agent did
+
+        self.last_move = 0          # Last move the agent did
         self.current_target = None  # Current target to go to
+        self.current_path = numpy.zeros((12, 20))    # The current path the agent is following, for displaying graphically
+        self.game_overs = 0         # Keep track of how many game overs there are
 
     #############################################################
     #      YOUR SUPER COOL ARTIFICIAL INTELLIGENCE HERE!!!      #
     #############################################################
     def ai_function(self):
         # To send a key stroke to the game, use self.game.on_key_press() method
+        # Reset the level if game over
+        if (self.isGameOver):
+            print("GAME OVER")
+            print(f"Game Time: {self.total_time}")
+            self.current_target = None
+            self.game.on_key_press(key = arcade.key.R, key_modifiers = False)
+            self.game_overs += 1
+
+        if (self.isGameClear):
+            print("GAME CLEAR!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"Game overs: {self.game_overs}")
+            print(f"Total Score: {self.total_score}\nTotal_time: {self.total_time}")
+            exit()
 
         # Get a copy of the current environment
         environment = numpy.copy(self.move_grid)
@@ -60,7 +76,7 @@ class Agent(threading.Thread):
         
         cur_r = self.tanuki_r
         cur_c = self.tanuki_c
-        print(f"Current location: {cur_r} {cur_c}")
+        #print(f"Current location: {cur_r} {cur_c}")
         target_list = []
 
         # Get a list of the coordinates of all the goals we want through a basic search
@@ -71,19 +87,18 @@ class Agent(threading.Thread):
         # print(target_list)
 
         # Check if the goal has already been taken or hasnt been initialized or the agent is standing on the goal
-        # If it has, then update with the closest goal to the agent
-        if ((self.current_target is None) or (self.move_grid[self.current_target[0]][self.current_target[1]] in [1, 11]) or (cur_r == self.current_target[0] and cur_c == self.current_target[1])):           
-            # Get the new shortest target
-            shortest_target = None
-            shortest_dist = 2147000000
+        # If it has, then update with the lowest cost
+        if ((self.current_target is None) or (self.move_grid[self.current_target[0]][self.current_target[1]] in [1, 11]) or (cur_r == self.current_target[0] and cur_c == self.current_target[1])):       
+            fruit_cost = 21470000.00    
             for target in target_list:
-                dist = self.__get_distance(cur_r, cur_c, target[0], target[1])
-                if dist < shortest_dist:
-                    shortest_dist = dist
-                    shortest_target = target
-            self.current_target = shortest_target   
-
-        print(f"Current target {self.current_target}")
+                try:
+                    (path, cost) = self.astar_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=target)
+                    if cost < fruit_cost:
+                        fruit_path = path
+                        fruit_cost = cost
+                        self.current_target = target 
+                except TypeError as e:
+                    pass
 
         # Inefficient way of checking if our path to one fruit crossed another fruit
         # We remove it from the environment grid then
@@ -98,19 +113,22 @@ class Agent(threading.Thread):
         dodge enemies whos state changes often by continuously finding the path to the goal
         """
         try:
+            fruit_path, c = self.astar_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=self.current_target)
             # If we are already on the target square, remove it from the environment because this isnt done automatically when the fruit is collected
             if (cur_r == self.current_target[0] and cur_c == self.current_target[1]):
                 self.move_grid[cur_r][cur_c] = 1
-            # Get the path to the target
-            fruit_path = self.astar_search_starter(move_grid=environment, cur_r=cur_r, cur_c=cur_c, target=self.current_target)
+                self.current_target = None
             if fruit_path is not None:
                 self.last_move = self.move_agent(cur_r=cur_r, cur_c=cur_c, path_grid=fruit_path, last_move=self.last_move)
+                self.current_path = fruit_path
             else:
                 print("No path found!")
         except RecursionError:
             print("Could not find a path: Recursion error")
         except IndexError:
             print("No targets! is an enemy over one?")
+        except TypeError as e:
+            pass
 
 
     #lastMove: 0 left, 1 left jump, 2 right, 3 right jump, 4 up, 5 down
@@ -128,19 +146,18 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 0
             cur_c = cur_c-1
             lastMove = 0
-            print("left")
+            #print("left")
         # Jump left
         elif (cur_c != 0) and (path_grid[cur_r][cur_c - 1] == 2): #jump
-            print(f"Last Move: {lastMove}")
             if lastMove in [1, 2, 3, 4, 5]:
-                print("Turn left")
+                #print("Turn left")
                 self.game.on_key_press(key = arcade.key.LEFT, key_modifiers = False)
             self.game.on_key_press(key = arcade.key.SPACE, key_modifiers = False)
             
             path_grid[cur_r][cur_c] = 0
             cur_c = cur_c-2
             lastMove = 1
-            print("jump Left")
+            #print("jump Left")
         # Move right
         elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 1 or path_grid[cur_r][cur_c + 1] == 9): #right
             if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
@@ -150,7 +167,7 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 0
             cur_c = cur_c+1
             lastMove = 2
-            print("right")
+            #print("right")
         # Jump right
         elif (cur_c != len(path_grid[cur_r]) - 1) and (path_grid[cur_r][cur_c + 1] == 2): #jump
             if lastMove == 0 or lastMove == 1 or lastMove == 4 or lastMove == 5:
@@ -160,7 +177,7 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 0
             cur_c = cur_c+2
             lastMove = 3
-            print("jump Right")
+            #print("jump Right")
         # Move up
         elif (cur_r != 0) and (path_grid[cur_r - 1][cur_c] == 1 or path_grid[cur_r - 1][cur_c] == 9): #up
             if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
@@ -170,7 +187,7 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 0
             cur_r = cur_r-1
             lastMove = 4
-            print("up")
+            #print("up")
         # Move down
         elif (cur_r != len(path_grid) - 1) and (path_grid[cur_r + 1][cur_c] == 1 or path_grid[cur_r + 1][cur_c] == 9): #down
             if lastMove == 0 or lastMove == 1 or lastMove == 2 or lastMove == 3:
@@ -180,7 +197,7 @@ class Agent(threading.Thread):
             path_grid[cur_r][cur_c] = 0
             cur_r = cur_r+1
             lastMove = 5
-            print("down")
+            #print("down")
 
         #time.sleep(0.1)
         return lastMove
@@ -214,7 +231,6 @@ class Agent(threading.Thread):
         if (search_queue.empty()):
             return None
         else:
-            # print(f"Nodes in stack: {search_stack.qsize()}")
             return self.astar_search_helper(move_grid=move_grid, queue=search_queue, target=target, visited=visited_grid)
 
 
@@ -266,14 +282,12 @@ class Agent(threading.Thread):
             if cur_r == target_row and cur_c == target_column:
                 #print("TARGET REACHED!")
                 path[cur_r][cur_c] = 9
-                return path
+                return path, cost
             else:
                 # Get surrounding nodes
                 neighbor_nodes = self.__get_surrounding_nodes(cur_r, cur_c, move_grid, visited)
                 # Find valid nodes and add to the stack
                 self.__get_valid_moves(cur_r, cur_c, target, neighbor_nodes, move_grid, path, queue, visited, cost)
-
-                #print(f"Nodes in stack: {stack.qsize()}")
                 return self.astar_search_helper(move_grid=move_grid, queue=queue, target=target, visited=visited)
 
 
@@ -405,7 +419,7 @@ class Agent(threading.Thread):
 
        # Up case
         # We have to be on a ladder space to move up; we can move to an empty space provided the current space is a ladder
-        if (node_up in [1, 6, 8, 9, 10]) and (move_grid[cur_r][cur_c] == 6):
+        if (node_up in [1, 6, 8, 9, 10, 11]) and (move_grid[cur_r][cur_c] == 6):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
 
@@ -414,7 +428,7 @@ class Agent(threading.Thread):
 
         # Down case
         # We can move down if the space below is a ladder and the current space is also a ladder or air (can stand on top of ladders)
-        if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6]):
+        if (node_down == 6) and (move_grid[cur_r][cur_c] in [1, 6, 9, 10, 11]):
             path_grid = numpy.copy(path)
             path_grid[cur_r][cur_c] = 1
 
@@ -474,7 +488,10 @@ class Agent(threading.Thread):
                 for row in range(12):
                     for col in range(20):
                         c = self.move_grid[row][col] * 255 / 12
-                        arr[col, row] = (c, c, c)
+                        if self.current_path[row][col] > 0:
+                            arr[col, row] = (0, 255, 0)
+                        else:
+                            arr[col, row] = (c, c, c)
                     for col in range(20, 40):
                         if self.kill_grid[row][col-20]:
                             arr[col, row] = (255, 0, 0)
